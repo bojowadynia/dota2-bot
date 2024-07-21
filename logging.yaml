@@ -1,0 +1,48 @@
+version: 1
+disable_existing_loggers: true
+
+formatters:
+    standard:
+        format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# filters:
+#   allow_root:
+
+
+root:
+  handlers: [console, file]
+  level: INFO
+
+handlers:
+  console:
+    class : logging.StreamHandler
+    formatter: standard
+    level   : INFO
+    # filters: [allow_root]
+    stream  : ext://sys.stdout
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: detailed.log
+    maxBytes: 10485760 # 10MB
+    backupCount: 20
+    encoding: utf8
+
+loggers:
+  sqlalchemy:
+    level: INFO
+    handlers: [file]
+    propagate: no
+  root:
+    level: INFO
+    handlers: [console, file]
+    propogate: no
+  sqlalchemy.engine.Engine:
+    level: INFO
+    handlers: [file]
+    propagate: no
+  Dota2Client.socache:
+    level: INFO
+    handlers: [console, file]
+    propogate: no

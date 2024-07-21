@@ -28,7 +28,3 @@ dota2 and steam libraries are set-up around it.
 ### Why callbacks
 
 dota2 and steam libraries are set-up around it.
-
-### Why no django
-
-I don't see value in using it. Gonna leave ui there. Migrate the bots out and add some bridge in between. Might as well stick with existing db as a means of comms.

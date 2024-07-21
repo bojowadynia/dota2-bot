@@ -2,3 +2,7 @@ git+https://github.com/ValvePython/steam.git
 git+https://github.com/bojowadynia/dota2.git@devel
 gevent==22.10.2
 gevent-eventemitter==2.1
+alembic==1.13.2
+SQLAlchemy==2.0.31
+mysql-connector-python==9.0.0
+PyYAML==6.0.1

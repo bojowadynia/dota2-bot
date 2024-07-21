@@ -1,0 +1,4 @@
+git+https://github.com/ValvePython/steam.git
+git+https://github.com/bojowadynia/dota2.git@devel
+gevent==22.10.2
+gevent-eventemitter==2.1

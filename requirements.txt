@@ -1,8 +1,13 @@
-git+https://github.com/ValvePython/steam.git
-git+https://github.com/bojowadynia/dota2.git@devel
 gevent==22.10.2
 gevent-eventemitter==2.1
-alembic==1.13.2
-SQLAlchemy==2.0.31
-mysql-connector-python==9.0.0
-PyYAML==6.0.1
+dota2 @ git+https://github.com/bojowadynia/dota2.git@7f5bf6daa1d422ce055bb02bb2de4f0a815506e0
+steam @ git+https://github.com/ValvePython/steam.git@26166e047b66a7be10bdf3c90e2e14de9283ab5a
+
+discord.py==2.4.0
+Django==5.0.7
+django-annoying==0.10.6
+django-autoslug==1.9.9
+django-multiselectfield==0.1.13
+django-solo==2.3.0
+pytz==2024.1
+mysqlclient==2.2.4

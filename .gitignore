@@ -1,3 +1,6 @@
 secrets
 __pycache__/
 detailed.log
+django_errors.log
+integration_errors.log
+

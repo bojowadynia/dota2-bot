@@ -6,7 +6,8 @@ from datetime import timedelta, datetime
 from statistics import mean
 
 import discord
-from discord import Button, ButtonStyle
+from discord.ui import Button, View
+from discord import ButtonStyle
 import pytz
 import timeago
 from discord.ext import tasks
@@ -18,9 +19,8 @@ from django.urls import reverse
 from django.db.models import Q, Count, Case, When, F
 from django.utils import timezone
 
-from bot.managers import BalanceResultManager, BalanceAnswerManager
-from bot.models import BalanceAnswer, PlayerReport, RolesPreference
-from bot.managers import MatchManager, QueueChannelManager
+from bot.models import PlayerReport, RolesPreference
+from bot.managers import QueueChannelManager
 from bot.models import (
     Player,
     LadderSettings,
@@ -31,9 +31,10 @@ from bot.models import (
     ScoreChange,
 )
 
-from bot.management.commands.discord.report_tip_commands import ReportTipCommands
+from bot.translations import t
 
-from bot.translations import t, TRANSLATIONS
+# from bot.management.commands.discord.report_tip_commands import ReportTipCommands
+
 
 WAITING_TIME_MINS = 5
 
@@ -66,7 +67,7 @@ class Command(BaseCommand):
         self.kick_votes = defaultdict(lambda: defaultdict(set))
         self.queued_players = set()
         self.last_queues_update = timezone.now()
-        self.report_tip_commands = ReportTipCommands()
+        # self.report_tip_commands = ReportTipCommands()
 
         # cached discord models
         self.queue_messages = {}
@@ -85,6 +86,7 @@ class Command(BaseCommand):
         intents = discord.Intents.default()
         intents.members = True
         intents.guilds = True
+        intents.message_content = True
 
         self.bot = discord.Client(intents=intents)
 
@@ -123,8 +125,10 @@ class Command(BaseCommand):
             activate_queue_channels.start()
             deactivate_queue_channels.start()
 
+        # TODO: make this interaction based so that we can reply that message is ill-formated
         async def on_register_form_answer(message):
             # Check if the message is a response to the exact form, User has invoked
+            # TODO: dedent this
             if message.author != self.bot.user and message.reference:
                 original_message = await message.channel.fetch_message(message.reference.message_id)
                 if original_message.author == self.bot.user:
@@ -137,7 +141,8 @@ class Command(BaseCommand):
                     await self.register_new_player(message, discord_main, mmr, steam_id)
 
         @self.bot.event
-        async def on_message(msg):
+        async def on_message(msg: discord.Message):
+            print(f"{msg.id} got a message: {msg}")
             await on_register_form_answer(msg)
 
             if msg.guild is None:
@@ -152,9 +157,12 @@ class Command(BaseCommand):
             if msg.author.bot:
                 return
 
+            print(f"parsing msg: {msg.id}, {msg.content}")
             msg.content = " ".join(msg.content.split())
+            print(f"parsed msg: {msg.id}, {msg.content}")
             if msg.content.startswith("!"):
                 # Process with a bot command
+                print(f"sending to bot: {msg.id}, {msg.content}")
                 await self.bot_cmd(msg)
 
         @self.bot.event
@@ -164,69 +172,6 @@ class Command(BaseCommand):
             self.last_seen[user.id] = timezone.now()
             if user.bot:
                 return
-
-        @self.bot.event
-        async def on_button_click(interaction: discord.Interaction, button):
-            self.last_seen[interaction.user.id] = timezone.now()
-            button_parts = button.custom_id.split("-")
-            if len(button_parts) != 2:
-                print("Invalid button custom_id format.")
-                return
-
-            type, value = button_parts
-            print(button_parts)
-
-            player = Player.objects.filter(discord_id=interaction.user.id).first()
-
-            if not player:
-                if type != "register_form":
-                    await interaction.defer()
-                    return
-
-                text = t("register_msg").format({self.unregistered_mention(interaction.author)})
-
-                await interaction.author.send(text)
-
-                await interaction.defer()
-
-                return
-
-            if type == "green":
-                q_channel = QueueChannel.objects.filter(discord_msg=value).first()
-
-                _, _, response = await self.player_join_queue(player, q_channel)
-                embed = discord.Embed(title=t("queue_join"), description=response, color=discord.Color.green())
-                # We can also send self-hiding responses to the message via:
-                # await interaction.respond(embed=embed, allowed_mentions=None, delete_after=5)
-                await interaction.edit(embed=embed)
-
-            elif type == "red":
-                await self.player_leave_queue(player, interaction.message)
-                await interaction.defer()
-
-            elif type == "vouch":
-                vouched_player = Command.get_player_by_name(value)
-
-                if not player.bot_access:
-                    await interaction.defer()
-                    return
-
-                if not vouched_player:
-                    embed = discord.Embed(title=t("vouch_error"), color=discord.Color.red())
-                    await interaction.message.edit(embed=embed)
-                    return
-
-                await self.player_vouched(vouched_player)
-                embed = discord.Embed(
-                    title=t("player_vouch"),
-                    description=t("approved_by").format(value, player.name),
-                    color=discord.Color.blue(),
-                )
-                await interaction.edit(embed=embed)
-                await self.purge_buttons_from_msg(interaction.message)
-
-            if type in ["green", "red"]:
-                await self.queues_show()
 
         @tasks.loop(seconds=302)
         async def update_voice_channel():
@@ -297,7 +242,8 @@ class Command(BaseCommand):
 
         self.bot.run(bot_token)
 
-    async def bot_cmd(self, msg):
+    async def bot_cmd(self, msg: discord.Message):
+        print(f"handling msg {msg.id}: {msg.content}")
         command = msg.content.split(" ")[0].lower()
 
         commands = self.get_available_bot_commands()
@@ -374,10 +320,12 @@ class Command(BaseCommand):
         # if this is a chat channel, check if command is allowed
         if msg.channel.id == DiscordChannels.get_solo().chat:
             if command not in chat_channel:
+                print(f"command not in chat channel: {msg.id}, {msg.content}")
                 return
 
         # if command is free for all, no other checks required
         if command in free_for_all:
+            print(f"sending to bot: {msg.id}, {msg.content}")
             await commands[command](msg)
             return
 
@@ -390,9 +338,9 @@ class Command(BaseCommand):
             await msg.channel.send(t("unregistered_command").format(mention))
             return
 
-        if player.banned:
-            await msg.channel.send(t("banned").format(msg.author.name))
-            return
+        # if player.banned:
+        #     await msg.channel.send(t("banned").format(msg.author.name))
+        #     return
 
         # check permissions when needed
         if not player.bot_access:
@@ -650,22 +598,14 @@ class Command(BaseCommand):
 
         await msg.channel.send(t("unban_message").format(player.name))
 
-    async def attach_join_buttons_to_queue_msg(self, msg, **kwargs):
-        await self.attach_buttons_to_msg(
-            msg,
-            [
-                [
-                    Button(label="Dołącz", custom_id="green-" + str(msg.id), style=ButtonStyle.green),
-                    Button(label="Opuść", custom_id="red-" + str(msg.id), style=ButtonStyle.red),
-                ]
-            ],
-        )
+    async def attach_join_buttons_to_queue_msg(self, msg: discord.Message, **kwargs):
+        await self.attach_buttons_to_msg(msg, QueueButtonView(self, msg))
 
-    async def attach_buttons_to_msg(self, msg, buttons, **kwargs):
-        await msg.edit(components=buttons)
+    async def attach_buttons_to_msg(self, msg: discord.Message, buttons: View, **kwargs):
+        await msg.edit(view=buttons)
 
-    async def purge_buttons_from_msg(self, msg):
-        await msg.edit(components=[])
+    async def purge_buttons_from_msg(self, msg: discord.Message):
+        await msg.edit(view=None)
 
     async def attach_help_buttons_to_msg(self, msg):
         if is_player_registered(msg, 0, "blank"):
@@ -1004,14 +944,14 @@ class Command(BaseCommand):
 
         await msg.channel.send(t("recent_matches").format(player, "\n".join(match_str(x) for x in mps), player_url))
 
-    async def help_command(self, msg, **kwargs):
+    async def help_command(self, msg: discord.Message, **kwargs):
         commands_dict = self.get_help_commands()
         master_text = ""
 
         for group, texts in commands_dict.items():
             for key, text in texts.items():
                 master_text += key + ": `" + text + "`\n"
-
+        print("sending back: {msg.id}")
         await msg.channel.send(t("help_command").format(master_text))
 
     async def admin_help_command(self, msg, **kwargs):
@@ -1183,12 +1123,12 @@ class Command(BaseCommand):
             await msg.channel.send(t("unregistered_mentioned"))
             return
 
-        _radiant = [(p.name, p.ladder_mmr) for p in radiant]
-        _dire = [(p.name, p.ladder_mmr) for p in dire]
+        # _radiant = [(p.name, p.ladder_mmr) for p in radiant]
+        # _dire = [(p.name, p.ladder_mmr) for p in dire]
         winner = 0 if winner == "radiant" else 1
 
-        balance = BalanceAnswerManager.balance_custom([_radiant, _dire])
-        MatchManager.record_balance(balance, winner)
+        # balance = BalanceAnswerManager.balance_custom([_radiant, _dire])
+        # MatchManager.record_balance(balance, winner)
 
         await msg.channel.send(
             t("match_recorded").format(
@@ -1225,13 +1165,13 @@ class Command(BaseCommand):
 
             radiant, dire, radiant_mmr, dire_mmr = Command.get_teams_from_queue(queue)
 
-            _radiant = [(p.name, p.ladder_mmr) for p in radiant]
-            _dire = [(p.name, p.ladder_mmr) for p in dire]
+            # _radiant = [(p.name, p.ladder_mmr) for p in radiant]
+            # _dire = [(p.name, p.ladder_mmr) for p in dire]
             winner = 0 if winner == "radiant" else 1
 
             # print([_radiant, _dire])
-            balance = BalanceAnswerManager.balance_custom([_radiant, _dire])
-            MatchManager.record_balance(balance, winner)
+            # balance = BalanceAnswerManager.balance_custom([_radiant, _dire])
+            # MatchManager.record_balance(balance, winner)
 
             await msg.channel.send(
                 "```\n"
@@ -1274,16 +1214,6 @@ class Command(BaseCommand):
         await msg.channel.send(t("queue_close").format(qnumber))
 
     async def player_join_queue(self, player, channel):
-        # check if player is banned
-        if player.banned:
-            response = t("banned").format(player)
-            return None, False, response
-
-        # check if player is vouched
-        if not player.vouched:
-            response = t("not_vouched").format(player)
-            return None, False, response
-
         # check if player has enough MMR
         if player.filter_mmr < channel.min_mmr:
             response = t("mmr_too_low").format(player)
@@ -1360,60 +1290,60 @@ class Command(BaseCommand):
 
         return queue
 
-    @staticmethod
-    def balance_queue(queue):
-        players = list(queue.players.all())
-        result = BalanceResultManager.balance_teams(players)
+    # @staticmethod
+    # def balance_queue(queue):
+    #     players = list(queue.players.all())
+    #     result = BalanceResultManager.balance_teams(players)
 
-        queue.balance = result.answers.first()
-        queue.save()
+    #     queue.balance = result.answers.first()
+    #     queue.save()
 
-    @staticmethod
-    def balance_str(balance: BalanceAnswer, verbose=True):
-        host = os.environ.get("BASE_URL", "localhost:8000")
-        url = reverse("balancer:balancer-answer", args=(balance.id,))
-        url = "%s%s" % (host, url)
+    # @staticmethod
+    # def balance_str(balance: BalanceAnswer, verbose=True):
+    #     host = os.environ.get("BASE_URL", "localhost:8000")
+    #     url = reverse("balancer:balancer-answer", args=(balance.id,))
+    #     url = "%s%s" % (host, url)
 
-        # find out who's undergdog
-        teams = balance.teams
-        underdog = None
-        if teams[1]["mmr"] - teams[0]["mmr"] >= MatchManager.underdog_diff:
-            underdog = 0
-        elif teams[0]["mmr"] - teams[1]["mmr"] >= MatchManager.underdog_diff:
-            underdog = 1
+    #     # find out who's undergdog
+    #     teams = balance.teams
+    #     underdog = None
+    #     if teams[1]["mmr"] - teams[0]["mmr"] >= MatchManager.underdog_diff:
+    #         underdog = 0
+    #     elif teams[0]["mmr"] - teams[1]["mmr"] >= MatchManager.underdog_diff:
+    #         underdog = 1
 
-        result = "```\n"
-        for i, team in enumerate(balance.teams):
-            if "role_score_sum" in team:
-                # this is balance with roles
-                player_names = [f"{i+1}. {p[0]}" for i, p in enumerate(team["players"])]
-            else:
-                # balance without roles
-                player_names = [p[0] for p in team["players"]]
+    #     result = "```\n"
+    #     for i, team in enumerate(balance.teams):
+    #         if "role_score_sum" in team:
+    #             # this is balance with roles
+    #             player_names = [f"{i+1}. {p[0]}" for i, p in enumerate(team["players"])]
+    #         else:
+    #             # balance without roles
+    #             player_names = [p[0] for p in team["players"]]
 
-            team_name = "Radiant" if i == 0 else "Dire"
-            result += (
-                f'{team_name} {"🐶" if i == underdog else " "} '
-                f'(śr. {team["mmr"]}): '
-                f'{" | ".join(player_names)}\n'
-            )
+    #         team_name = "Radiant" if i == 0 else "Dire"
+    #         result += (
+    #             f'{team_name} {"🐶" if i == underdog else " "} '
+    #             f'(śr. {team["mmr"]}): '
+    #             f'{" | ".join(player_names)}\n'
+    #         )
 
-        if verbose:
-            result += "\nLadder MMR: \n"
-            for i, team in enumerate(balance.teams):
-                player_mmrs = [str(p[1]) for p in team["players"]]
-                team_name = "Radiant" if i == 0 else "Dire"
+    #     if verbose:
+    #         result += "\nLadder MMR: \n"
+    #         for i, team in enumerate(balance.teams):
+    #             player_mmrs = [str(p[1]) for p in team["players"]]
+    #             team_name = "Radiant" if i == 0 else "Dire"
 
-                result += (
-                    f'{team_name} {"🐶" if i == underdog else " "} '
-                    f'(avg. {team["mmr"]}): '
-                    f'{" | ".join(player_mmrs)}\n'
-                )
+    #             result += (
+    #                 f'{team_name} {"🐶" if i == underdog else " "} '
+    #                 f'(avg. {team["mmr"]}): '
+    #                 f'{" | ".join(player_mmrs)}\n'
+    #             )
 
-        result += f"\n{url}"
-        result += "```"
+    #     result += f"\n{url}"
+    #     result += "```"
 
-        return result
+    #     return result
 
     @staticmethod
     def get_teams_from_queue(q):
@@ -1436,15 +1366,10 @@ class Command(BaseCommand):
     @staticmethod
     def queue_str(q: LadderQueue, show_min_mmr=True):
         players = q.players.all()
-        avg_mmr = round(mean(p.ladder_mmr for p in players))
-
-        # game_str = ""
-        print(dir(players[0]))
+        avg_mmr = round(mean(p.ladder_mmr for p in players)) if len(players) > 0 else 0
 
         if players.count() == 10:
             radiant, dire, radiant_mmr, dire_mmr = Command.get_teams_from_queue(q)
-            # _radiant = [(p.name, p.ladder_mmr) for p in radiant]
-            # _dire = [(p.name, p.ladder_mmr) for p in dire]
             radiant_str = "\n".join(
                 [
                     f"{i+1}. " + "{:<15}".format(f"[#{p.rank_score}][{p.ladder_mmr}]") + f"<{p.name}>"
@@ -1691,72 +1616,72 @@ class Command(BaseCommand):
         else:
             return t("not_in_this_queue").format(player.name)
 
-    async def handle_report_tip_command(self, msg, is_tip: bool, **kwargs):
-        # Prevent bot from responding to its own messages
-        if msg.author == self.bot.user:
-            return
+    # async def handle_report_tip_command(self, msg, is_tip: bool, **kwargs):
+    #     # Prevent bot from responding to its own messages
+    #     if msg.author == self.bot.user:
+    #         return
 
-        # Check if the message is a private message
-        if not msg.guild and not is_tip:
-            await msg.channel.send(t("report_in_dm"))
-            return
+    #     # Check if the message is a private message
+    #     if not msg.guild and not is_tip:
+    #         await msg.channel.send(t("report_in_dm"))
+    #         return
 
-        parts = msg.content.split()
-        if len(parts) < 2:
-            await msg.channel.send(t("report_tip_format"))
-            return
+    #     parts = msg.content.split()
+    #     if len(parts) < 2:
+    #         await msg.channel.send(t("report_tip_format"))
+    #         return
 
-        # Assume the command format is "!command ReportedPlayer [MatchID] Comment"
-        reported_name = parts[1]
-        match_id = None
-        comment_index = 2
+    #     # Assume the command format is "!command ReportedPlayer [MatchID] Comment"
+    #     reported_name = parts[1]
+    #     match_id = None
+    #     comment_index = 2
 
-        # If the fourth part is a digit, it's considered a MatchID, and the comment starts from the fourth part
-        if len(parts) > 2 and parts[2].isdigit():
-            match_id = parts[2]
-            comment_index = 3
+    #     # If the fourth part is a digit, it's considered a MatchID, and the comment starts from the fourth part
+    #     if len(parts) > 2 and parts[2].isdigit():
+    #         match_id = parts[2]
+    #         comment_index = 3
 
-        comment = " ".join(parts[comment_index:])
+    #     comment = " ".join(parts[comment_index:])
 
-        try:
-            # Fetch reporter and reported players based on Discord IDs (or names, depending on your setup)
-            reporter = Player.objects.get(discord_id=msg.author.id)
-            reported = Command.get_player_by_name(reported_name)
+    #     try:
+    #         # Fetch reporter and reported players based on Discord IDs (or names, depending on your setup)
+    #         reporter = Player.objects.get(discord_id=msg.author.id)
+    #         reported = Command.get_player_by_name(reported_name)
 
-            if reporter == reported:
-                await msg.channel.send(t("report_cannot_self"))
-                return
+    #         if reporter == reported:
+    #             await msg.channel.send(t("report_cannot_self"))
+    #             return
 
-            # Call the appropriate method from ReportTipCommands
-            if is_tip:
-                result = self.report_tip_commands.tip_player_command(reporter, reported, match_id, comment)
-            else:
-                result = self.report_tip_commands.report_player_command(reporter, reported, match_id, comment)
+    #         # Call the appropriate method from ReportTipCommands
+    #         if is_tip:
+    #             result = self.report_tip_commands.tip_player_command(reporter, reported, match_id, comment)
+    #         else:
+    #             result = self.report_tip_commands.report_player_command(reporter, reported, match_id, comment)
 
-            if isinstance(result, PlayerReport):
-                # Determine the message format based on the value of the result
-                if result.value > 0:
-                    message_template = t("tip_success_msg")
-                else:
-                    message_template = t("report_success_msg")
+    #         if isinstance(result, PlayerReport):
+    #             # Determine the message format based on the value of the result
+    #             if result.value > 0:
+    #                 message_template = t("tip_success_msg")
+    #             else:
+    #                 message_template = t("report_success_msg")
 
-                # Construct the custom success message using data from the PlayerReport instance
-                custom_message = message_template.format(
-                    self.player_mention(result.from_player),  # Reporter's or tipper's name
-                    self.player_mention(result.to_player),  # Reported or tipped player's name
-                    result.match.dota_id,  # Match ID, or indicate it's the last match
-                    f"`{result.comment}`",  # Comment"
-                )
-                await msg.channel.send(custom_message)
-            else:
-                # The result is a string containing an error message
-                await msg.channel.send(result)
+    #             # Construct the custom success message using data from the PlayerReport instance
+    #             custom_message = message_template.format(
+    #                 self.player_mention(result.from_player),  # Reporter's or tipper's name
+    #                 self.player_mention(result.to_player),  # Reported or tipped player's name
+    #                 result.match.dota_id,  # Match ID, or indicate it's the last match
+    #                 f"`{result.comment}`",  # Comment"
+    #             )
+    #             await msg.channel.send(custom_message)
+    #         else:
+    #             # The result is a string containing an error message
+    #             await msg.channel.send(result)
 
-        except Player.DoesNotExist:
-            await msg.channel.send(t("report_could_not_find_players"))
-        except Exception as e:
-            print(str(e))
-            await msg.channel.send("Error occurred in the bot script.")
+    #     except Player.DoesNotExist:
+    #         await msg.channel.send(t("report_could_not_find_players"))
+    #     except Exception as e:
+    #         print(str(e))
+    #         await msg.channel.send("Error occurred in the bot script.")
 
     def get_help_commands(self):
         return {
@@ -1839,3 +1764,47 @@ class Command(BaseCommand):
             "!tips": self.handle_show_tips_command,
             "!reports": self.handle_show_reports_command,
         }
+
+
+class QueueButtonView(discord.ui.View):
+    # TODO: passing bot here is a workaround for global state this whole thing has
+    # down the road make it more modular
+    def __init__(self, bot, msg: discord.Message):
+        super().__init__()
+        self.msg_id = msg.id
+        self.bot = bot
+
+    @discord.ui.button(label="Dołącz", style=ButtonStyle.green)
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # TODO: this breaks last seen cache as it was global
+        # self.last_seen[interaction.user.id] = timezone.now()
+        player = Player.objects.filter(discord_id=interaction.user.id).first()
+        if not player:
+            text = t("register_msg").format({self.bot.unregistered_mention(interaction.user)})
+            await interaction.user.send(text)
+            await interaction.response.defer()
+
+            return
+        q_channel = QueueChannel.objects.filter(discord_msg=self.msg_id).first()
+        _, _, response = await self.bot.player_join_queue(player, q_channel)
+        embed = discord.Embed(title=t("queue_join"), description=response, color=discord.Color.green())
+        await interaction.response.edit_message(embed=embed)
+
+        await self.bot.queues_show()
+
+    @discord.ui.button(label="Opuść", style=ButtonStyle.red)
+    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # TODO: this breaks last seen cache as it was global
+        # self.last_seen[interaction.user.id] = timezone.now()
+        player = Player.objects.filter(discord_id=interaction.user.id).first()
+        if not player:
+            text = t("register_msg").format({self.bot.unregistered_mention(interaction.user)})
+            await interaction.user.send(text)
+            await interaction.response.defer()
+
+            return
+
+        await self.bot.player_leave_queue(player, interaction.message)
+        await interaction.response.defer()
+
+        await self.bot.queues_show()

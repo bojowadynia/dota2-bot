@@ -1,5 +1,5 @@
 import pytz
-from django.db import models, transaction
+from django.db import models
 from django.utils import timezone
 
 
@@ -7,8 +7,7 @@ class PlayerManager(models.Manager):
     # gives player initial score and mmr
     @staticmethod
     def init_score(player, reset_mmr=False):
-        from bot.models import ScoreChange
-        from bot.models import LadderSettings
+        from bot.models import ScoreChange, LadderSettings
 
         if reset_mmr:
             initial_mmr = PlayerManager.dota_to_ladder_mmr(player.dota_mmr)
@@ -67,8 +66,7 @@ class MatchManager(models.Manager):
 
     @staticmethod
     def add_scores(match):
-        from bot.models import ScoreChange
-        from bot.models import LadderSettings
+        from bot.models import ScoreChange, LadderSettings
 
         # TODO: make values like win/loss change and underdog bonus changeble in admin panel
         mmr_diff = match.balance.teams[0]["mmr"] - match.balance.teams[1]["mmr"]
@@ -107,37 +105,37 @@ class MatchManager(models.Manager):
                 season=LadderSettings.get_solo().current_season,
             )
 
-    @staticmethod
-    def record_balance(answer, winner, dota_id=None):
-        from bot.models import Player, Match, MatchPlayer
-        from bot.models import LadderSettings
+    # @staticmethod
+    # def record_balance(answer, winner, dota_id=None):
+    #     from bot.models import Player, Match, MatchPlayer
+    #     from bot.models import LadderSettings
 
-        players = [p[0] for t in answer.teams for p in t["players"]]
-        players = Player.objects.filter(name__in=players)
+    #     players = [p[0] for t in answer.teams for p in t["players"]]
+    #     players = Player.objects.filter(name__in=players)
 
-        # check that all players from balance exist
-        # (we don't allow CustomBalance results here)
-        if len(players) < 10:
-            return None
+    #     # check that all players from balance exist
+    #     # (we don't allow CustomBalance results here)
+    #     if len(players) < 10:
+    #         return None
 
-        with transaction.atomic():
-            match = Match.objects.create(
-                winner=winner,
-                balance=answer,
-                season=LadderSettings.get_solo().current_season,
-                dota_id=dota_id,
-            )
+    #     with transaction.atomic():
+    #         match = Match.objects.create(
+    #             winner=winner,
+    #             balance=answer,
+    #             season=LadderSettings.get_solo().current_season,
+    #             dota_id=dota_id,
+    #         )
 
-            for i, team in enumerate(answer.teams):
-                for player in team["players"]:
-                    player = next(p for p in players if p.name == player[0])
+    #         for i, team in enumerate(answer.teams):
+    #             for player in team["players"]:
+    #                 player = next(p for p in players if p.name == player[0])
 
-                    MatchPlayer.objects.create(match=match, player=player, team=i)
+    #                 MatchPlayer.objects.create(match=match, player=player, team=i)
 
-            MatchManager.add_scores(match)
-            Player.objects.update_ranks()
+    #         MatchManager.add_scores(match)
+    #         Player.objects.update_ranks()
 
-        return match
+    #     return match
 
 
 class ScoreChangeManager(models.Manager):

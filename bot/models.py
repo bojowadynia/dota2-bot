@@ -1,7 +1,5 @@
-# import collections
 from django.db import models
 
-# from jsonfield import JSONField
 import calendar
 
 from multiselectfield import MultiSelectField
@@ -11,24 +9,6 @@ from autoslug import AutoSlugField
 from bot.managers import PlayerManager, ScoreChangeManager
 from solo.models import SingletonModel
 from annoying.fields import AutoOneToOneField
-
-
-# # BalanceResult is a list of all ways to build 2 teams
-# # with the same 10 players
-# class BalanceResult(models.Model):
-#     mmr_exponent = models.FloatField(default=3)
-
-
-# # BalanceAsnwer is a single way to make 2 teams out of 10 players
-# class BalanceAnswer(models.Model):
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-
-#     # TODO: check if we need load_kwargs here
-#     teams = JSONField(load_kwargs={"object_pairs_hook": collections.OrderedDict})
-#     mmr_diff = models.BigIntegerField()
-#     mmr_diff_exp = models.BigIntegerField()
-#     result = models.ForeignKey(BalanceResult, related_name="answers", null=True, on_delete=models.DO_NOTHING)
 
 
 def create_roles_pref():
@@ -82,7 +62,7 @@ class Player(models.Model):
     description = models.CharField(max_length=200, null=True, blank=True)
     vouch_info = models.CharField(max_length=200, null=True, blank=True)
 
-    # roles = AutoOneToOneField(RolesPreference, on_delete=models.DO_NOTHING)
+    roles = AutoOneToOneField(RolesPreference, on_delete=models.DO_NOTHING)
 
     objects = PlayerManager()
 
@@ -268,8 +248,8 @@ class LadderQueue(models.Model):
 
 
 class QueuePlayer(models.Model):
-    queue = models.ForeignKey(LadderQueue, on_delete=models.DO_NOTHING)
-    player = models.ForeignKey(Player, on_delete=models.DO_NOTHING)
+    queue = models.ForeignKey(LadderQueue, on_delete=models.CASCADE)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
     joined_date = models.DateTimeField(auto_now_add=True)
 
     class Meta:

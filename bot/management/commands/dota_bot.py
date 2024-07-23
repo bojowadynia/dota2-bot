@@ -1,4 +1,10 @@
+import yaml
 import logging
+
+with open("logging.yaml", "rt") as f:
+    logging_config = yaml.safe_load(f.read())
+logging.config.dictConfig(logging_config)
+
 from enum import IntEnum
 from dataclasses import dataclass
 import os
@@ -68,10 +74,6 @@ class Command(BaseCommand):
 
         credentials = Credentials(login=os.getenv("BOT_LOGIN"), password=os.getenv("BOT_PASSWORD"))
 
-        if not LadderSettings.get_solo().use_queue:
-            logging.error("this bot is only usable with ladder queue")
-            return
-
         try:
             gevent.joinall([gevent.spawn(self.bot_loop, credentials)])
         finally:
@@ -104,7 +106,8 @@ class Command(BaseCommand):
     def invite_players(self, dota: Dota2Client):
         lobby_members = [p.id for p in dota.lobby.all_members]
 
-        players = [p for p in self.queue.players.all()]
+        # TODO: either use dota_id or steam_id everywhere
+        players = [int(p.dota_id) for p in self.queue.players.all()]
         logging.info(f"Inviting players: {players}")
 
         for player_steam_id in players:

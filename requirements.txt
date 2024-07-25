@@ -1,13 +1,42 @@
-gevent==22.10.2
-gevent-eventemitter==2.1
-dota2 @ git+https://github.com/bojowadynia/dota2.git@7f5bf6daa1d422ce055bb02bb2de4f0a815506e0
-steam @ git+https://github.com/ValvePython/steam.git@26166e047b66a7be10bdf3c90e2e14de9283ab5a
-
+aiohttp==3.9.5
+aiosignal==1.3.1
+asgiref==3.8.1
+attrs==23.2.0
+cachetools==5.4.0
+certifi==2024.7.4
+charset-normalizer==3.3.2
 discord.py==2.4.0
 Django==5.0.7
 django-annoying==0.10.6
 django-autoslug==1.9.9
 django-multiselectfield==0.1.13
 django-solo==2.3.0
-pytz==2024.1
+docutils==0.21.2
+dota2 @ git+https://github.com/bojowadynia/dota2.git@7f5bf6daa1d422ce055bb02bb2de4f0a815506e0
+frozenlist==1.4.1
+gevent==22.10.2
+gevent-eventemitter==2.1
+gitdb==4.0.11
+GitPython==3.1.41
+greenlet==3.0.3
+idna==3.7
+multidict==6.0.5
 mysqlclient==2.2.4
+protobuf==3.20.3
+pycryptodomex==3.20.0
+pytz==2024.1
+PyYAML==6.0.1
+requests==2.32.3
+setuptools==69.0.3
+six==1.16.0
+smmap==5.0.1
+sqlparse==0.5.1
+statistics==1.0.3.5
+steam @ git+https://github.com/ValvePython/steam.git@26166e047b66a7be10bdf3c90e2e14de9283ab5a
+timeago==1.0.16
+urllib3==1.26.19
+vdf==3.4
+wheel==0.43.0
+yarl==1.9.4
+zope.event==5.0
+zope.interface==6.4.post2

@@ -154,18 +154,9 @@ class LadderSettings(SingletonModel):
     # afk_allowed_time = models.PositiveSmallIntegerField(default=25)
     # afk_response_time = models.PositiveSmallIntegerField(default=5)
     votekick_treshold = models.PositiveSmallIntegerField(default=7)
-    # pd_votes_needed = models.PositiveSmallIntegerField(default=5)
     dota_lobby_name = models.CharField(max_length=200, default="RD2L")
     noob_queue_suffix = models.CharField(max_length=10, default="LUL", blank=True)
-    # casual_mode = models.BooleanField(default=False)
 
-    # default draft mode
-    # AUTO_BALANCE = 0
-    # PLAYER_DRAFT = 1
-    # DRAFT_CHOICES = (
-    #     (AUTO_BALANCE, "Auto balance"),
-    #     (PLAYER_DRAFT, "Player draft"),
-    # )
     # draft_mode = models.PositiveSmallIntegerField(choices=DRAFT_CHOICES, default=AUTO_BALANCE)
 
     # queue mmr filter
@@ -185,18 +176,12 @@ class DiscordChannels(SingletonModel):
     queue_counter = models.BigIntegerField(null=True, blank=True)
 
 
-#     class Meta:
-#         app_label = "ladder"
-
-
 # class DiscordPoll(models.Model):
 #     name = models.CharField(max_length=200)
 #     message_id = models.BigIntegerField()
 
-#     class Meta:
-#         app_label = "ladder"
 
-
+# Queue discord channel
 class QueueChannel(models.Model):
     name = models.CharField(max_length=200)
     min_mmr = models.PositiveSmallIntegerField(default=0)
@@ -205,26 +190,29 @@ class QueueChannel(models.Model):
     discord_msg = models.BigIntegerField(null=True, blank=True)
     record_matches = models.BooleanField(default=True)
 
+    # Queue is active as long as it is not full
     active = models.BooleanField(default=True)
-    active_on = MultiSelectField(choices=enumerate(calendar.day_name), default=range(7), null=True, blank=True)
+    # Not sure we will be doing time-scoped queues
+    # active_on = MultiSelectField(choices=enumerate(calendar.day_name), default=range(7), null=True, blank=True)
 
-    GAME_MODES = (
-        ("AP", "All Pick"),
-        ("AR", "All Random"),
-        ("RD", "Random Draft"),
-        ("SD", "Single Draft"),
-        ("CD", "Captains Draft"),
-        ("CM", "Captains Mode"),
-        ("RCM", "Reverse Captains Mode"),
-        ("ARDM", "All Random Death Match"),
-        ("AD", "Ability Draft"),
-    )
-    game_mode = models.CharField(choices=GAME_MODES, default="CM", max_length=200)
+    # GAME_MODES = (
+    #     ("AP", "All Pick"),
+    #     ("AR", "All Random"),
+    #     ("RD", "Random Draft"),
+    #     ("SD", "Single Draft"),
+    #     ("CD", "Captains Draft"),
+    #     ("CM", "Captains Mode"),
+    #     ("RCM", "Reverse Captains Mode"),
+    #     ("ARDM", "All Random Death Match"),
+    #     ("AD", "Ability Draft"),
+    # )
+    # game_mode = models.CharField(choices=GAME_MODES, default="CM", max_length=200)
 
     def __str__(self):
         return self.name
 
 
+# Looks like dota-side counterpart of discord queue channel
 class LadderQueue(models.Model):
     players = models.ManyToManyField(
         Player, through="QueuePlayer", symmetrical=False, through_fields=("queue", "player")
@@ -234,7 +222,6 @@ class LadderQueue(models.Model):
     channel = models.ForeignKey(QueueChannel, on_delete=models.DO_NOTHING)
     min_mmr = models.PositiveSmallIntegerField(default=0)
     max_mmr = models.PositiveSmallIntegerField(default=0)
-    # balance = models.OneToOneField(BalanceAnswer, null=True, blank=True, on_delete=models.DO_NOTHING)
 
     game_start_time = models.DateTimeField(null=True, blank=True)
     game_end_time = models.DateTimeField(null=True, blank=True)
@@ -270,7 +257,6 @@ class PlayerReport(models.Model):
         # Optionally, add some meta options, like ordering or unique constraints
         # For example, ensuring a player can only report another player for a match once:
         unique_together = ("from_player", "to_player", "match")
-        app_label = "ladder"
 
     def __str__(self):
         return f"Report from {self.from_player.name} to {self.to_player.name} for match {self.match.id}"

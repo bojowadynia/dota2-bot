@@ -11,7 +11,7 @@ formatters:
 
 root:
   handlers: [console, file]
-  level: INFO
+  level: DEBUG
 
 handlers:
   console:
@@ -22,7 +22,7 @@ handlers:
     stream  : ext://sys.stdout
   file:
     class: logging.handlers.RotatingFileHandler
-    level: INFO
+    level: DEBUG
     formatter: standard
     filename: detailed.log
     maxBytes: 10485760 # 10MB
@@ -30,18 +30,10 @@ handlers:
     encoding: utf8
 
 loggers:
-  sqlalchemy:
-    level: INFO
-    handlers: [file]
-    propagate: no
   root:
     level: INFO
     handlers: [console, file]
     propogate: no
-  sqlalchemy.engine.Engine:
-    level: INFO
-    handlers: [file]
-    propagate: no
   Dota2Client.socache:
     level: INFO
     handlers: [console, file]

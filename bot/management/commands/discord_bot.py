@@ -385,6 +385,7 @@ class Command(BaseCommand):
         player = Player.objects.create(
             name=name,
             dota_mmr=mmr,
+            ladder_mmr=mmr,
             dota_id=dota_id,
             discord_id=msg.author.id,
         )
@@ -423,9 +424,6 @@ class Command(BaseCommand):
 
     async def whois_command(self, msg, **kwargs):
         command = msg.content
-        print()
-        print("Whois command:")
-        print(command)
 
         player = name = None
         try:
@@ -440,10 +438,6 @@ class Command(BaseCommand):
             return
 
         dotabuff = f"https://www.dotabuff.com/players/{player.dota_id}"
-
-        host = os.environ.get("BASE_URL", "localhost:8000")
-        url = reverse("ladder:player-overview", args=(player.slug,))
-        player_url = f"{host}{url}"
 
         season = LadderSettings.get_solo().current_season
         player.matches = player.matchplayer_set.filter(match__season=season).select_related("match")
@@ -489,7 +483,6 @@ class Command(BaseCommand):
                 player.roles.offlane,
                 player.roles.pos4,
                 player.roles.pos5,
-                player_url,
                 dotabuff,
             )
         )
@@ -781,7 +774,7 @@ class Command(BaseCommand):
             )
             players = qs[:limit]
             if bottom:
-                players = reversed(players.reverse())
+                players = reversed(players.reverse()) if len(players) else []
             return players
 
         def player_str(p):
@@ -811,21 +804,17 @@ class Command(BaseCommand):
         except ValueError:
             return
 
-        host = os.environ.get("BASE_URL", "localhost:8000")
-        url = f'{host}{reverse("ladder:player-list-score")}'
-
         if limit < 1:
             await msg.channel.send(t("very_funny"))
             return
 
         if limit > 15:
-            await msg.channel.send(t("just_open").format(url))
             return
 
         # all is ok, can show top players
         players = get_top_players(limit, bottom)
         top_str = "\n".join(f"{p.rank_score:2}. {player_str(p)}" for p in players)
-        await msg.channel.send(t("full_leaderboard").format(top_str, url))
+        await msg.channel.send(t("full_leaderboard").format(top_str))
 
     async def bottom_command(self, msg, **kwargs):
         print(f"\n!bottom command:\n{msg.content}")
@@ -926,12 +915,8 @@ class Command(BaseCommand):
                 await msg.channel.send(t("unregistered_user").format(name))
                 return
 
-        host = os.environ.get("BASE_URL", "localhost:8000")
-        url = reverse("ladder:player-overview", args=(player.slug,))
-        player_url = f"{host}{url}"
-
         if not 0 < num < 10:
-            await msg.channel.send(t("just_open").format(player_url))
+            await msg.channel.send(t("just_open"))
             return
 
         mps = player.matchplayer_set.all()[:num]
@@ -942,7 +927,7 @@ class Command(BaseCommand):
             dotabuff = f"https://www.dotabuff.com/matches/{mp.match.dota_id}"
             return f"│ ` {timeago.format(mp.match.date, timezone.now()):<15}{mp.result:<13}{dotabuff}"
 
-        await msg.channel.send(t("recent_matches").format(player, "\n".join(match_str(x) for x in mps), player_url))
+        await msg.channel.send(t("recent_matches").format(player, "\n".join(match_str(x) for x in mps)))
 
     async def help_command(self, msg: discord.Message, **kwargs):
         commands_dict = self.get_help_commands()

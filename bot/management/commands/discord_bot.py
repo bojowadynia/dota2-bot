@@ -15,12 +15,12 @@ from discord.channel import TextChannel
 from django.core.management.base import BaseCommand
 import os
 
-from django.urls import reverse
 from django.db.models import Q, Count, Case, When, F
 from django.utils import timezone
 
 from bot.models import PlayerReport, RolesPreference
-from bot.managers import QueueChannelManager
+
+# from bot.managers import QueueChannelManager
 from bot.models import (
     Player,
     LadderSettings,
@@ -122,8 +122,8 @@ class Command(BaseCommand):
             # It needs too high privileges to channel.purge() or 2FA for bot
             # clear_queues_channel.start()
 
-            activate_queue_channels.start()
-            deactivate_queue_channels.start()
+            # activate_queue_channels.start()
+            # deactivate_queue_channels.start()
 
         # TODO: make this interaction based so that we can reply that message is ill-formated
         async def on_register_form_answer(message):
@@ -208,21 +208,21 @@ class Command(BaseCommand):
             if queued_players != self.queued_players or outdated:
                 await self.queues_show()
 
-        @tasks.loop(minutes=1)
-        async def activate_queue_channels():
-            dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
-            if dt.hour == 0 and dt.minute == 0:
-                print("Activating queue channels.")
-                QueueChannelManager.activate_qchannels()
-                await self.setup_queue_messages()
+        # @tasks.loop(minutes=1)
+        # async def activate_queue_channels():
+        #     dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
+        #     if dt.hour == 0 and dt.minute == 0:
+        #         print("Activating queue channels.")
+        #         QueueChannelManager.activate_qchannels()
+        #         await self.setup_queue_messages()
 
-        @tasks.loop(minutes=1)
-        async def deactivate_queue_channels():
-            dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
-            if dt.hour == 8 and dt.minute == 0:
-                print("Deactivating queue channels")
-                QueueChannelManager.deactivate_qchannels()
-                await self.setup_queue_messages()
+        # @tasks.loop(minutes=1)
+        # async def deactivate_queue_channels():
+        #     dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
+        #     if dt.hour == 8 and dt.minute == 0:
+        #         print("Deactivating queue channels")
+        #         QueueChannelManager.deactivate_qchannels()
+        #         await self.setup_queue_messages()
 
         @tasks.loop(minutes=5)
         async def clear_queues_channel():

@@ -142,27 +142,27 @@ class ScoreChangeManager(models.Manager):
     pass
 
 
-class QueueChannelManager(models.Manager):
-    @staticmethod
-    def activate_qchannels():
-        from bot.models import QueueChannel
+# class QueueChannelManager(models.Manager):
+#     @staticmethod
+#     def activate_qchannels():
+#         from bot.models import QueueChannel
 
-        dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
-        day = dt.weekday()
+#         dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
+#         day = dt.weekday()
 
-        QueueChannel.objects.filter(active=False, active_on__contains=str(day)).update(active=True)
+#         QueueChannel.objects.filter(active=False, active_on__contains=str(day)).update(active=True)
 
-    @staticmethod
-    def deactivate_qchannels():
-        from bot.models import QueueChannel
-        from bot.models import LadderQueue
+#     @staticmethod
+#     def deactivate_qchannels():
+#         from bot.models import QueueChannel
+#         from bot.models import LadderQueue
 
-        dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
-        day = dt.weekday()
+#         dt = timezone.localtime(timezone.now(), pytz.timezone("CET"))
+#         day = dt.weekday()
 
-        QueueChannel.objects.filter(active=True).exclude(active_on__contains=str(day)).update(
-            active=False, discord_msg=None
-        )
+#         QueueChannel.objects.filter(active=True).exclude(active_on__contains=str(day)).update(
+#             active=False, discord_msg=None
+#         )
 
-        # close queues from deactivated qchannels
-        LadderQueue.objects.filter(channel__active=False).update(active=False)
+#         # close queues from deactivated qchannels
+#         LadderQueue.objects.filter(channel__active=False).update(active=False)

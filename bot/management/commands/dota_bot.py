@@ -31,7 +31,7 @@ from dota2.proto_enums import DOTAChatChannelType_t
 from dota2.protobufs import dota_gcmessages_client_chat_pb2
 
 import bot
-from bot.models import LadderQueue, LadderSettings, Match, MatchPlayer, Player
+from bot.models import LadderQueue, LadderSettings, Match, MatchPlayer, Player, ScoreChange
 
 
 class LobbyState(IntEnum):
@@ -115,6 +115,8 @@ class Command(BaseCommand):
     def sync_queue_worker(self):
         while True:
             gevent.sleep(5)
+            logging.info(f"free bots {self.free_bots}")
+            logging.info(f"busy bots {self.busy_bots}")
             self.sync_queue()
 
     def sync_queue(self):
@@ -122,13 +124,13 @@ class Command(BaseCommand):
         for queue in queues:
             count = queue.players.count()
             if count < 1:
-                logging.debug(f"queue {queue.id} has not enough players yet: {count}")
+                logging.info(f"queue {queue.id} has not enough players yet: {count}")
                 continue
 
             available_bots = [bot_id for bot_id, bot in self.free_bots.items() if bot.has_lobby_ready()]
 
             if len(available_bots) < 1:
-                logging.debug("no free bots available")
+                logging.info("no free bots available")
                 continue
 
             bot = self.free_bots.pop(available_bots[0])
@@ -254,7 +256,7 @@ class Bot(object):
         self.create_new_lobby(dota_client)
 
     def handle_dota_lobby_changed(self, dota_client: Dota2Client, lobby: dota2.features.Lobby):
-        logging.info(f"lobby state change: {lobby}")
+        # logging.info(f"lobby state change: {lobby}")
 
         if int(lobby.state) == LobbyState.UI:
             self.handle_dota_lobby_ui(dota_client)
@@ -277,7 +279,7 @@ class Bot(object):
         logging.info(f"{self.id}: lobby UI state change")
 
     def handle_dota_lobby_server(self, dota_client: Dota2Client, lobby: dota2.features.Lobby):
-        if not hasattr(lobby, "server_id") or not dota_client.queue:
+        if not hasattr(lobby, "server_id") or not self.queue:
             return
         self.queue.game_server = lobby.server_id
         self.queue.save()
@@ -291,59 +293,6 @@ class Bot(object):
         self.cleanup()
         self.busy_bots.pop(self.id)
         self.free_bots[self.id] = self
-
-    def record_match_result(self, dota_client: Dota2Client, lobby: dota2.features.Lobby):
-
-        radiant = {}
-        dire = {}
-        for player in dota_client.lobby.all_members:
-            player_id = SteamID(player.id)
-            if player.team == DOTA_GC_TEAM.GOOD_GUYS:
-                radiant[player_id] = player
-            if player.team == DOTA_GC_TEAM.BAD_GUYS:
-                dire[player_id] = player
-
-        (winner_tag, winner_squad, loser_squad) = (
-            (Match.WINNER_RADIANT, radiant, dire)
-            if lobby.match_outcome == EMatchOutcome.RadVictory
-            else (Match.WINNER_DIRE, dire, radiant)
-        )
-
-        self.queue.game_end_time = timezone.now()
-        self.queue.save()
-
-        for player_id, player in radiant.items():
-            logging.info(f"radiant {player_id} {dir(player)} {player}")
-
-        for player_id, player in dire.items():
-            logging.info(f"dire {player_id} {dir(player)} {player}")
-
-        if len(radiant) + len(dire) < 10:
-            return
-
-        with transaction.atomic():
-            match = Match.objects.create(
-                winner=winner_tag,
-                season=LadderSettings.get_solo().current_season,
-                dota_id=lobby.match_id,
-            )
-
-            winner_ids = [str(steam_id.account_id) for steam_id in winner_squad]
-            loser_ids = [str(steam_id.account_id) for steam_id in loser_squad]
-
-            # TODO: could be one query
-            winner_players = Player.objects.filter(dota_id__in=winner_ids)
-            loser_players = Player.objects.filter(dota_id__in=loser_ids)
-
-            # TODO: those ifs are ugly af
-            for player in winner_players:
-                MatchPlayer.objects.create(
-                    match=match, player=player, team=0 if lobby.match_outcome == EMatchOutcome.RadVictory else 1
-                )
-            for player in loser_players:
-                MatchPlayer.objects.create(
-                    match=match, player=player, team=1 if lobby.match_outcome == EMatchOutcome.RadVictory else 0
-                )
 
     def handle_dota_chat_message(
         self, dota_client: Dota2Client, channel: ChatChannel, msg: dota_gcmessages_client_chat_pb2.CMsgDOTAChatMessage
@@ -409,16 +358,21 @@ class Bot(object):
             dota_client.invite_to_lobby(player_steam_id)
 
     def cleanup(self):
-        self.queue = None
         self.start_votes = {}
-        if not self.dota_client:
-            logging.error("cleanup called on bot which is not ready")
-            return
 
-        # Callback on removed lobby will create a new one
-        # when queue gets attached lobby name needs adjustment
-        # could also trigger lobby creation routine when 10 players are available
-        self.dota_client.destroy_lobby()
+        if self.queue:
+            if self.queue.game_end_time:
+                self.queue.active = False
+                self.queue.save()
+            self.queue = None
+
+        if self.dota_client:
+            logging.error("cleanup called on bot which is not ready")
+
+            # Callback on removed lobby will create a new one
+            # when queue gets attached lobby name needs adjustment
+            # could also trigger lobby creation routine when 10 players are available
+            self.dota_client.destroy_lobby()
 
     def handle_atexit(self):
         if not self.dota_client:
@@ -443,7 +397,6 @@ class Bot(object):
             return
 
         # TODO: another guard that we have 10 people?
-        logging.info(f"foo {type(lobby_players)}")
         players_queue = [(steam_id, player.ladder_mmr) for steam_id, player in lobby_players.items()]
         players_queue.sort(key=lambda x: x[1])
 
@@ -462,11 +415,14 @@ class Bot(object):
         if not self.queue:
             return
 
+        # capitan has to be in slot 1 (topmost)
+
         # look at current state of lobby
         radiant = {}
         dire = {}
         lobby = {}
         for player in dota_client.lobby.all_members:
+            # logging.info(f"player: {player.id} {player.name} {player.slot} {player.team}")
             player_id = SteamID(player.id)
             if player.team == DOTA_GC_TEAM.GOOD_GUYS:
                 radiant[player_id] = player
@@ -476,41 +432,48 @@ class Bot(object):
                 lobby[player_id] = player
 
         radiant_cap_id, dire_cap_id = captains
-        radiant_cap = lobby_players[radiant_cap_id]
-        dire_cap = lobby_players[dire_cap_id]
 
         radiant_cap_missing = True
-        for player_id in radiant:
+        for player_id, player in radiant:
             if player_id != radiant_cap_id:
+                dota_client.channels.lobby.send(f"{player.name}, move to unassigned")
                 dota_client.practice_lobby_kick_from_team(player_id.as_32)
-            else:
-                radiant_cap_missing = False
+                continue
+
+            if player.slot != 1:
+                dota_client.channels.lobby.send(f"{player.name}, move to topmost radiant slot")
+                continue
+
+            radiant_cap_missing = False
 
         dire_cap_missing = True
-        for player_id in dire:
+        for player_id, player in dire.items():
             if player_id != dire_cap_id:
+                dota_client.channels.lobby.send(f"{player.name}, move to unassigned")
                 dota_client.practice_lobby_kick_from_team(player_id.as_32)
-            else:
-                dire_cap_missing = False
-
-        expected_players = players.copy()
-        for player_id in lobby:
-            if player_id == radiant_cap_id:
-                dota_client.channels.lobby.send(
-                    f"{radiant_cap.name}, you are a radiant captain. Move to a slot in radiant team"
-                )
                 continue
-            if player_id == dire_cap_id:
-                dota_client.channels.lobby.send(f"{dire_cap.name}, you are a dire captain. Move to a slot in dire team")
+
+            if player.slot != 1:
+                dota_client.channels.lobby.send(f"{player.name}, move to topmost dire slot")
+                # TODO: maybe theres msg to move player to a slot
+                continue
+
+            dire_cap_missing = False
+
+        missing_players = players.copy()
+        for player_id in lobby:
+            if player_id in {radiant_cap_id, dire_cap_id}:
                 continue
             if player_id not in players:
                 dota_client.channels.lobby.send(
                     f"{player.name}, you are not in this queue. Move to observer slot or leave"
                 )
                 continue
-            expected_players.pop(player_id)
+            missing_players.pop(player_id)
 
-        return LobbyValidationResult(radiant_cap_missing, dire_cap_missing, expected_players)
+        return LobbyValidationResult(
+            radiant_cap_missing, dire_cap_missing, {lobby_players[steam_id].name for steam_id in missing_players}
+        )
 
     def handle_dota_cmd_start(self, msg: dota_gcmessages_client_chat_pb2.CMsgDOTAChatMessage, dota_client: Dota2Client):
         if not hasattr(dota_client, "lobby"):
@@ -526,13 +489,19 @@ class Bot(object):
             dota_client.channels.lobby.send("Lobby start preconditions are not fulfilled")
             if validation_result.radiant_cap_missing:
                 dota_client.channels.lobby.send(
-                    f"Player {queue_players[captains[0]].name} needs to be in radiant and nobody else"
+                    f"Player {queue_players[captains[0]].name} needs to be in topmostl radiant slot. Nobody else should be there"
                 )
 
             if validation_result.dire_cap_missing:
                 dota_client.channels.lobby.send(
-                    f"Player {queue_players[captains[1]].name} needs to be in dire and nobody else"
+                    f"Player {queue_players[captains[1]].name} needs to be in topmost dire slot. Nobody else should be there"
                 )
+
+            if len(validation_result.expected_players) > 0:
+                players_str = ", ".join(validation_result.expected_players)
+                dota_client.channels.lobby.send(f"Players [{players_str}] should be in lobby and not assigned to teams")
+
+            return
 
         self.start_votes = {account_id: True for account_id in self.start_votes if account_id in captains}
 
@@ -555,6 +524,98 @@ class Bot(object):
         dota_client.channels.lobby.send("Ok, let's go! GL HF")
         gevent.sleep(2)
         dota_client.launch_practice_lobby()
+
+    def record_match_result(self, dota_client: Dota2Client, lobby: dota2.features.Lobby):
+        if lobby.match_outcome not in [EMatchOutcome.RadVictory, EMatchOutcome.DireVictory]:
+            logging.error(f"Match didn't finish correctly: {lobby.match_outcome}")
+            # disable queue?
+            return
+
+        # radiant = {}
+        # dire = {}
+        # for player in dota_client.lobby.all_members:
+        #     player_id = SteamID(player.id)
+        #     if player.team == DOTA_GC_TEAM.GOOD_GUYS:
+        #         radiant[player_id] = player
+        #     if player.team == DOTA_GC_TEAM.BAD_GUYS:
+        #         dire[player_id] = player
+
+        winner_tag = (
+            DOTA_GC_TEAM.GOOD_GUYS if lobby.match_outcome == EMatchOutcome.RadVictory else DOTA_GC_TEAM.BAD_GUYS
+        )
+
+        self.queue.game_end_time = timezone.now()
+        self.queue.save()
+
+        # for player_id, player in radiant.items():
+        #     logging.info(f"radiant {player_id} {player.team}")
+
+        # for player_id, player in dire.items():
+        #     logging.info(f"dire {player_id} {player.team}")
+
+        if len(dota_client.lobby.all_members) < 10:
+            logging.info("not scoring since there was less than 10 people")
+            return
+
+        queue_players = self.queue.players.all()
+        queue_players = {SteamID(player.dota_id): player for player in queue_players}
+
+        mmr_per_game = LadderSettings.get_solo().mmr_per_game
+        season = LadderSettings.get_solo().current_season
+        with transaction.atomic():
+            match = Match.objects.create(
+                winner=winner_tag,
+                season=season,
+                dota_id=lobby.match_id,
+            )
+
+            radiant_mmr = 0
+            dire_mmr = 0
+
+            # TODO: can you prealloacte with capacity in python?
+            match_players = []
+            for lobby_player in dota_client.lobby.all_members:
+                steam_id = SteamID(lobby_player.id)
+                queue_player = queue_players[steam_id]
+
+                match_players.append(
+                    MatchPlayer.objects.create(
+                        match=match,
+                        player=queue_player,
+                        team=queue_player.team,
+                    )
+                )
+
+                if queue_player.team == DOTA_GC_TEAM.GOOD_GUYS:
+                    radiant_mmr += queue_player.ladder_mmr
+                else:
+                    dire_mmr += queue_player.ladder_mmr
+
+            # TODO: move score calculation to its own function
+            underdog_diff = 150
+            mmr_diff = radiant_mmr - dire_mmr
+            underdog = DOTA_GC_TEAM.GOOD_GUYS if mmr_diff <= 0 else DOTA_GC_TEAM.BAD_GUYS
+            underdog_bonus = abs(mmr_diff) // underdog_diff * 15  # 15 mmr points for each 200 mmr diff
+            underdog_bonus = min(15, underdog_bonus)  # but no more than 15 mmr
+
+            # TODO: this could be sourced without db roundtrip
+            for matchPlayer in match_players:
+
+                is_victory = 1 if matchPlayer.team == match.winner else -1
+                is_underdog = 1 if matchPlayer.team == underdog else -1
+
+                mmr_change = mmr_per_game * is_victory
+                mmr_change += underdog_bonus * is_underdog
+
+                ScoreChange.objects.create(
+                    player=matchPlayer.player,
+                    score_change=is_victory,
+                    mmr_change=mmr_change,
+                    match=matchPlayer,
+                    season=season,
+                )
+
+            Player.objects.update_ranks()
 
 
 def generate_lobby_password() -> str:

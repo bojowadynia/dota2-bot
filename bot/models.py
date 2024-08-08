@@ -1,14 +1,15 @@
 from django.db import models
 
-import calendar
+# import calendar
 
-from multiselectfield import MultiSelectField
+# from multiselectfield import MultiSelectField
 
 from autoslug import AutoSlugField
 
 from bot.managers import PlayerManager, ScoreChangeManager
 from solo.models import SingletonModel
 from annoying.fields import AutoOneToOneField
+from dota2.enums import DOTA_GC_TEAM
 
 
 def create_roles_pref():
@@ -100,15 +101,19 @@ class Player(models.Model):
         return last_match.match.dota_id if last_match else None
 
 
+TEAM_CHOICES = (
+    (DOTA_GC_TEAM.GOOD_GUYS, "Radiant team"),
+    (DOTA_GC_TEAM.BAD_GUYS, "Dire team"),
+)
+
+
 class Match(models.Model):
     players = models.ManyToManyField(Player, through="MatchPlayer")
 
-    WINNER_RADIANT = 1
-    WINNER_DIRE = 2
     WINNER_CHOICES = (
         (None, "Match not yet settled"),
-        (WINNER_RADIANT, "Banned from playing only"),
-        (WINNER_DIRE, "Banned from playing and lobby"),
+        (DOTA_GC_TEAM.GOOD_GUYS, "Radiant victory"),
+        (DOTA_GC_TEAM.BAD_GUYS, "Dire victory"),
     )
     winner = models.PositiveSmallIntegerField(choices=WINNER_CHOICES, null=True, blank=True)
     # balance = models.OneToOneField(BalanceAnswer, null=True, on_delete=models.DO_NOTHING)
@@ -120,7 +125,7 @@ class Match(models.Model):
 class MatchPlayer(models.Model):
     match = models.ForeignKey(Match, on_delete=models.DO_NOTHING)
     player = models.ForeignKey(Player, on_delete=models.DO_NOTHING)
-    team = models.PositiveSmallIntegerField()
+    team = models.PositiveSmallIntegerField(choices=TEAM_CHOICES)
 
     class Meta:
         unique_together = ("player", "match")
